@@ -1,0 +1,28 @@
+#include <Stepper.h>
+
+const int stepsPerRevolution = 100;  // Ajuste isso para o número de passos por revolução do seu motor
+
+// Inicializa a biblioteca Stepper nos pinos 4, 16, 17, 5:
+Stepper myStepper(stepsPerRevolution, 4, 16, 17, 5);
+
+void setup() {
+  // Console de debug
+  Serial.begin(9600);
+
+  // Configura a velocidade do motor de passo
+  myStepper.setSpeed(200);
+}
+
+void loop() {
+  // Rotaciona o motor de passo 100 passos no sentido horário
+  myStepper.step(100);
+
+  // Pausa de 1000 ms
+  delay(1000);
+
+  // Rotaciona o motor de passo 100 passos no sentido anti-horário
+  myStepper.step(-100);
+
+  // Pausa de 1000 ms
+  delay(1000);
+}
