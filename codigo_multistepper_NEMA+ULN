@@ -52,3 +52,70 @@ void loop() {
   }
 }
 
+//Arduino Code - Move from A to B by a specific number of steps with set speed and acceleration
+ 
+// // Include the Arduino Stepper.h library:
+// #include <AccelStepper.h> //Include the AccelStepper library
+// #include <MultiStepper.h>
+// // Define the motor pins:
+// #define MP1  19 // IN1 on the ULN2003
+// #define MP2  18 // IN2 on the ULN2003
+// #define MP3  5  // IN3 on the ULN2003
+// #define MP4  4  // IN4 on the ULN2003
+// #define MotorInterfaceType 8 // Define the interface type as 8 = 4 wires * step factor (2 for half step)
+
+// // Definições de pinos para o motor
+// #define STEP_PIN 14
+// #define DIR_PIN 12
+
+// // Criação do objeto stepper
+// AccelStepper stepper1(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
+
+// AccelStepper stepper2(AccelStepper::HALF4WIRE, MP1, MP3, MP2, MP4);//Define the pin sequence (IN1-IN3-IN2-IN4)
+
+// //MultiStepper steppers;
+// const int SPR = 2048;//Steps per revolution
+ 
+// void setup() {
+//   Serial.begin(115200);
+//   Serial.println("Inicialização do sistema");
+
+//   stepper1.setMaxSpeed(1000);
+//   stepper1.setAcceleration(500);
+
+//   stepper2.setMaxSpeed(1000);
+//   stepper2.setAcceleration(500);
+
+//   stepper1.setSpeed(500); // 500 passos por segundo
+//   stepper2.setSpeed(500); // 500 passos por segundo
+
+// //   steppers.addStepper(stepper1);
+// //   steppers.addStepper(stepper2);
+// //   long positions[2]; // Array para armazenar as posições desejadas para cada motor
+// //   positions[0] = 5000; // Posição desejada para o primeiro motor
+// //   positions[1] = 10000; // Posição desejada para o segundo motor
+// //   steppers.moveTo(positions); // Manda os motores para as posições desejadas
+//  }
+ 
+// void loop() {
+//   // Movimenta o motor a uma velocidade constante
+//   stepper1.runSpeed();
+
+//   // Inverte a direção a cada 5000 milissegundos (5 segundos)
+//   static unsigned long lastMillis = 0;
+//   if (millis() - lastMillis > 5000) {
+//     stepper1.setSpeed(-stepper1.speed()); // Inverte a direção
+//     lastMillis = millis();
+//   }
+//   // Movimenta o motor a uma velocidade constante
+//   stepper2.runSpeed();
+
+//   // Inverte a direção a cada 5000 milissegundos (2 segundos)
+//   static unsigned long lastMillis2 = 0;
+//   if (millis() - lastMillis2 > 2000) {
+//     stepper2.setSpeed(-stepper2.speed()); // Inverte a direção
+//     lastMillis2 = millis();
+//   }
+
+// }
+
