@@ -1,0 +1,62 @@
+ESP:
+#include <Arduino.h>
+#include <AccelStepper.h>
+
+// Definições de pinos para o motor
+#define STEP_PIN 14
+#define DIR_PIN 12
+#define LED_BUILTIN 2
+
+// Criação do objeto stepper
+AccelStepper stepper(1, STEP_PIN, DIR_PIN);
+
+void setup() {
+  // Inicia a comunicação serial com 115200 baud rate.
+  Serial.begin(115200);
+  
+  // Configura o pino do LED como saída
+  pinMode(LED_BUILTIN, OUTPUT);
+  
+  // Configurações iniciais do motor
+  stepper.setMaxSpeed(1000);
+  stepper.setAcceleration(500);
+}
+
+void loop() {
+  // Verifica se há dados disponíveis para ler na porta serial.
+  if (Serial.available() > 0) {
+    // Lê a linha de dados recebida até encontrar um caractere de nova linha ('\n').
+    String received = Serial.readStringUntil('\n');
+    
+    // Imprime os dados recebidos no console serial para depuração.
+    Serial.print("Received: ");
+    Serial.println(received);
+
+    // Verifica se o comando recebido é "RUN"
+    if (received == "RUN") {
+      stepper.setSpeed(500);  // Define a velocidade do motor para 500 passos por segundo
+      digitalWrite(LED_BUILTIN, HIGH);  // Acende o LED
+    } else {
+      stepper.setSpeed(0);  // Para o motor
+      digitalWrite(LED_BUILTIN, LOW);  // Apaga o LED
+    }
+  }
+
+  // Executa um passo do motor de acordo com a velocidade definida
+  stepper.runSpeed();
+}
+
+RASP:
+#!/usr/bin/env python3
+import serial
+import time
+
+ser = serial.Serial('/dev/ttyUSB0', 115200)
+
+try:
+  While True:
+    ser.write(b"RUN\n")
+    time.sleep(1)
+except KeyboardInterrupt:
+  ser.close()
+    
