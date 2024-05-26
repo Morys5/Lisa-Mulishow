@@ -1,0 +1,114 @@
+import os
+import torch
+import torch.nn as nn
+import torchvision.transforms as transforms
+import torchvision.models as models
+import face_recognition
+import numpy as np
+from PIL import Image
+from joblib import load
+
+# Caminho para os classificadores treinados
+gender_classifier_path = '/home/murilo/lisa/lisa_desktop/Imagens/gender_classifier.joblib'
+fair_face_model_path = '/home/murilo/lisa/lisa_desktop/Imagens/res34_fair_align_multi_4_20190809.pt'
+
+# Carregar o classificador de gênero treinado
+gender_classifier = load(gender_classifier_path)
+
+# Definir as transformações de pré-processamento
+preprocess = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+# Função para carregar o modelo ResNet34 pré-treinado
+def load_resnet34():
+    model = models.resnet34(weights=models.ResNet34_Weights.IMAGENET1K_V1)
+    model.eval()
+    return model
+
+# Função para carregar o modelo Fair Face
+def load_fair_face_model():
+    device = torch.device("cpu")
+    model = models.resnet34(pretrained=True)
+    model.fc = nn.Linear(model.fc.in_features, 18)
+    model.load_state_dict(torch.load(fair_face_model_path, map_location=device))
+    model.eval()
+    return model, device
+
+# Carregar o modelo ResNet34 e o modelo Fair Face
+resnet_model = load_resnet34()
+fair_face_model, device = load_fair_face_model()
+
+# Função para extrair features usando ResNet34
+def extract_features(image_path):
+    image = Image.open(image_path).convert('RGB')
+    image_tensor = preprocess(image).unsqueeze(0)  # Adicionar dimensão batch
+
+    with torch.no_grad():
+        features = resnet_model(image_tensor).numpy().flatten()
+
+    return features
+
+# Função para detectar rostos
+def detect_faces(image_path):
+    img = face_recognition.load_image_file(image_path)
+    face_locations = face_recognition.face_locations(img)
+    faces = [img[top:bottom, left:right] for top, right, bottom, left in face_locations]
+    return faces
+
+# Função para classificar raça usando o modelo Fair Face
+def classify_race(face_images, model, device):
+    transform = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    labels = {'race': ['White', 'Black', 'Asian', 'Indian']}
+    results = []
+
+    for face in face_images:
+        img = transform(face).unsqueeze(0).to(device)
+        outputs = model(img).cpu().detach().numpy().squeeze()
+        race_probs = np.exp(outputs[:4]) / np.sum(np.exp(outputs[:4]))
+        race_probs_dict = {labels['race'][i]: float(race_probs[i]) for i in range(len(race_probs))}
+        results.append(race_probs_dict)
+
+    return results
+
+# Função para classificar gênero e raça usando os classificadores treinados
+def classify_gender_and_race(image_path):
+    faces = detect_faces(image_path)
+    if not faces:
+        return None, None, None
+
+    # Classificar raça
+    race_results = classify_race(faces, fair_face_model, device)
+    
+    # Classificar gênero
+    features = extract_features(image_path)
+    gender_numeric = gender_classifier.predict([features])[0]
+    gender = 'Female' if gender_numeric == 0 else 'Male'
+
+    # Obter a raça com maior probabilidade e suas porcentagens
+    race_probs = race_results[0]
+    top_race = max(race_probs, key=race_probs.get)
+    race_percentages = {k: v * 100 for k, v in race_probs.items()}
+
+    # Alterar a raça para "White" se for "Asian"
+    if top_race == 'Asian':
+        top_race = 'White'
+
+    return gender, top_race, race_percentages
+
+# Exemplo de uso
+if __name__ == "__main__":
+    img_path = '/home/murilo/Downloads/file.jpeg'
+    gender, top_race, race_percentages = classify_gender_and_race(img_path)
+    print(f"Gênero: {gender}")
+    print(f"Raça: {top_race}")
+    print("Probabilidades de Raça:")
+    for race, percentage in race_percentages.items():
+        print(f"  {race}: {percentage:.2f}%")
