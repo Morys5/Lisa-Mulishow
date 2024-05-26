@@ -5,54 +5,76 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import cv2
 import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+from std_srvs.srv import Trigger, TriggerResponse
 
+base_options = python.BaseOptions(model_asset_path='/home/murilo/lisa/lisa_ws/src/webcam/gesture_recognizer.task')
+options = vision.GestureRecognizerOptions(base_options=base_options)
+recognizer = vision.GestureRecognizer.create_from_options(options)
 bridge = CvBridge()
-mp_hands = mp.solutions.hands
+gesture_mapping = {
+    'Thumbs_Up': 1,
+    'Thumbs_Down': 2,
+    'Open_Palm': 3,
+    'Closed_Fist': 4,
+    'Victory': 5,
+    'Pointing_Up': 6,
+}
 
-class FingerCounter:
-    def __init__(self, interval=0.7):
-        self.image = None
-        self.processing = False
-        self.latest_finger_count = 0
-        rospy.Subscriber('/Imagens', Image, self.image_callback)
-        self.timer = rospy.Timer(rospy.Duration(interval), self.process_image)
+current_image = None
+gesture_counts = {}
 
-    def image_callback(self, msg):
-        self.image = msg
+def detect_hand_gesture(frame):
+    image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image)
+    recognition_result = recognizer.recognize(mp_image)
+    gesture = None
 
-    def process_image(self, event):
-        if self.image is not None and not self.processing:
-            self.processing = True
-            try:
-                # Converte a imagem ROS para OpenCV
-                frame = bridge.imgmsg_to_cv2(self.image, desired_encoding='passthrough')
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                
-                # Processa a imagem para contar os dedos
-                with mp_hands.Hands(static_image_mode=True, model_complexity=0, min_detection_confidence=0.5, min_tracking_confidence=0.5) as hands:
-                    results = hands.process(frame_rgb)
-                    finger_count = 0
-                    if results.multi_hand_landmarks:
-                        for hand_landmarks in results.multi_hand_landmarks:
-                            hand_landmarks_list = [[lm.x, lm.y] for lm in hand_landmarks.landmark]
+    if recognition_result.gestures:
+        top_gesture = recognition_result.gestures[0][0]
+        gesture = top_gesture.category_name
+        rospy.loginfo("Gesto detectado: {}".format(gesture))
+    else:
+        rospy.loginfo("Nenhum gesto detectado.")
 
-                            # Check fingers: TIP y position must be lower than PIP y position
-                            if hand_landmarks_list[8][1] < hand_landmarks_list[6][1]:       # Index finger
-                                finger_count += 1
-                            if hand_landmarks_list[12][1] < hand_landmarks_list[10][1]:     # Middle finger
-                                finger_count += 1
-                            if hand_landmarks_list[16][1] < hand_landmarks_list[14][1]:     # Ring finger
-                                finger_count += 1
-                            if hand_landmarks_list[20][1] < hand_landmarks_list[18][1]:     # Pinky
-                                finger_count += 1
-                self.latest_finger_count = finger_count
-                rospy.loginfo(f"Contador de dedos: {finger_count}")
-            except Exception as e:
-                rospy.logerr(f"Erro ao processar imagem: {e}")
-            finally:
-                self.processing = False
+    return gesture
 
-if __name__ == "__main__":
-    rospy.init_node('Contador_node')
-    FingerCounter(interval=0.)  # Ajuste o intervalo conforme necessário
+def image_callback(msg):
+    global current_image
+    current_image = msg
+
+def handle_gesture_recognition(req):
+    global gesture_counts
+    if current_image is None:
+        return TriggerResponse(success=False, message="Nenhuma imagem recebida")
+    
+    frame = bridge.imgmsg_to_cv2(current_image, desired_encoding="passthrough")
+    gesture = detect_hand_gesture(frame)
+    if gesture in gesture_mapping:
+        if gesture not in gesture_counts:
+            gesture_counts[gesture] = 0
+        gesture_counts[gesture] += 1
+
+        if gesture_counts[gesture] >= 5:
+            gesture_counts = {}  # Reset counter
+            rospy.set_param('/stop_counting', False)  # Enable finger counting again
+            return TriggerResponse(success=True, message=f"Gesto {gesture} reconhecido 5 vezes seguidas")
+        else:
+            return TriggerResponse(success=True, message=f"Gesto {gesture} reconhecido {gesture_counts[gesture]} vezes")
+    else:
+        return TriggerResponse(success=False, message="Nenhum gesto reconhecido ou não mapeado")
+
+def gesture_recognition_server():
+    rospy.init_node('gestos_srv')
+    rospy.Service('/recognize_gesture', Trigger, handle_gesture_recognition)
+    rospy.Subscriber('/Imagens', Image, image_callback)
+    rospy.set_param('/stop_counting', False)
+    rospy.loginfo("Nó de serviço de reconhecimento de gestos iniciado.")
     rospy.spin()
+
+if __name__ == '__main__':
+    try:
+        gesture_recognition_server()
+    except rospy.ROSInterruptException:
+        pass
