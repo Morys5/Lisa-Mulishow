@@ -7,21 +7,12 @@ import cv2
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from std_msgs.msg import Int32
-from std_srvs.srv import Trigger
+from std_srvs.srv import Trigger, TriggerResponse
 
-# Baixar o modelo de reconhecimento de gestos (execute uma vez antes de rodar o script)
-# !wget -q https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task
-
-# Configurações do modelo
 base_options = python.BaseOptions(model_asset_path='/home/murilo/lisa/lisa_ws/src/webcam/gesture_recognizer.task')
 options = vision.GestureRecognizerOptions(base_options=base_options)
 recognizer = vision.GestureRecognizer.create_from_options(options)
-
-# Inicializa o CvBridge uma vez
 bridge = CvBridge()
-
-# Mapeamento de gestos para inteiros
 gesture_mapping = {
     'Thumbs_Up': 1,
     'Thumbs_Down': 2,
@@ -31,17 +22,16 @@ gesture_mapping = {
     'Pointing_Up': 6,
 }
 
+current_image = None
+gesture_counts = {}
+
 def detect_hand_gesture(frame):
-    # Converte a imagem de BGR para RGB
     image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image)
-
-    # Reconhece gestos na imagem
     recognition_result = recognizer.recognize(mp_image)
     gesture = None
 
     if recognition_result.gestures:
-        # Obtém o gesto principal reconhecido
         top_gesture = recognition_result.gestures[0][0]
         gesture = top_gesture.category_name
         rospy.loginfo("Gesto detectado: {}".format(gesture))
@@ -51,39 +41,40 @@ def detect_hand_gesture(frame):
     return gesture
 
 def image_callback(msg):
-    global gesture_pub
-    frame = bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
+    global current_image
+    current_image = msg
+
+def handle_gesture_recognition(req):
+    global gesture_counts
+    if current_image is None:
+        return TriggerResponse(success=False, message="Nenhuma imagem recebida")
+    
+    frame = bridge.imgmsg_to_cv2(current_image, desired_encoding="passthrough")
     gesture = detect_hand_gesture(frame)
     if gesture in gesture_mapping:
-        rospy.loginfo("Gesto reconhecido: {}".format(gesture))
-        gesture_pub.publish(Int32(data=gesture_mapping[gesture]))
+        if gesture not in gesture_counts:
+            gesture_counts[gesture] = 0
+        gesture_counts[gesture] += 1
+
+        if gesture_counts[gesture] >= 5:
+            gesture_counts = {}  # Reset counter
+            rospy.set_param('/stop_counting', False)  # Enable finger counting again
+            return TriggerResponse(success=True, message=f"Gesto {gesture} reconhecido 5 vezes seguidas")
+        else:
+            return TriggerResponse(success=True, message=f"Gesto {gesture} reconhecido {gesture_counts[gesture]} vezes")
     else:
-        rospy.loginfo("Gesto não reconhecido ou não mapeado: {}".format(gesture))
+        return TriggerResponse(success=False, message="Nenhum gesto reconhecido ou não mapeado")
 
-def gesture_recognition():
-    global gesture_pub
-    rospy.init_node('gestos_pub_sub', anonymous=True)
-    gesture_pub = rospy.Publisher('/Gestos', Int32, queue_size=10)
+def gesture_recognition_server():
+    rospy.init_node('gestos_srv')
+    rospy.Service('/recognize_gesture', Trigger, handle_gesture_recognition)
     rospy.Subscriber('/Imagens', Image, image_callback)
-    rospy.loginfo("Nó de reconhecimento de gestos iniciado.")
-
-    rospy.wait_for_service('/get_finger_count')
-    get_finger_count = rospy.ServiceProxy('/get_finger_count', Trigger)
-
-    while not rospy.is_shutdown():
-        try:
-            response = get_finger_count()
-            if response.success:
-                rospy.loginfo("Contador é 2, reconhecimento de gestos ativado.")
-                rospy.spin()
-            else:
-                rospy.loginfo("Contador não é 2, aguardando...")
-                rospy.sleep(1)
-        except rospy.ServiceException as e:
-            rospy.logerr("Falha ao chamar o serviço: %s", e)
+    rospy.set_param('/stop_counting', False)
+    rospy.loginfo("Nó de serviço de reconhecimento de gestos iniciado.")
+    rospy.spin()
 
 if __name__ == '__main__':
     try:
-        gesture_recognition()
+        gesture_recognition_server()
     except rospy.ROSInterruptException:
         pass
